@@ -337,6 +337,47 @@ struct SH4Baker
     }
 };
 
+struct SH4NonColorBaker {
+    static const uint64 BasisCount = 2;
+
+    uint64 NumSamples = 0;
+    SH4 SH4Sum;
+    Float3 ColorSum;
+
+    void Init(uint64 numSamples, Float4 prevResult[BasisCount]) {
+        NumSamples = numSamples;
+        SH4Sum = SH4();
+        ColorSum = 0.0;
+    }
+
+    Float3 SampleDirection(Float2 samplePoint) {
+        return SampleDirectionHemisphere(samplePoint.x, samplePoint.y);
+    }
+
+    void AddSample(Float3 sampleDirTS, uint64 sampleIdx, Float3 sample, Float3 sampleDirWS, Float3 normal) {
+        const Float3 sampleDir = AppSettings::WorldSpaceBake ? sampleDirWS : sampleDirTS;
+        SH4Sum += ProjectOntoSH4(sampleDir);
+        ColorSum += sample;
+    }
+
+    void FinalResult(Float4 bakeOutput[BasisCount]) {
+        SH4 result = SH4Sum * HemisphereMonteCarloFactor(NumSamples);
+        bakeOutput[0] = Float4::Clamp(Float4(result.Coefficients[0], result.Coefficients[1], result.Coefficients[2], result.Coefficients[3]), -FP16Max, FP16Max);
+        Float3 finalColorResult = ColorSum * CosineWeightedMonteCarloFactor(NumSamples);
+        bakeOutput[1] = Float4(Float3::Clamp(finalColorResult, 0.0f, FP16Max), 1.0f);
+    }
+
+    void ProgressiveResult(Float4 bakeOutput[BasisCount], uint64 passIdx) {
+        // const float lerpFactor = passIdx / (passIdx + 1.0f);
+        // for (uint64 i = 0; i < BasisCount; ++i) {
+        //     Float3 newSample = SH4Sum.Coefficients[i] * HemisphereMonteCarloFactor(1);
+        //     Float3 currValue = bakeOutput[i].To3D();
+        //     currValue = Lerp<Float3>(newSample, currValue, lerpFactor);
+        //     bakeOutput[i] = Float4(Float3::Clamp(currValue, -FP16Max, FP16Max), 1.0f);
+        // }
+    }
+};
+
 // Bakes radiance projected onto L2 SH, with 27 floats per texel
 struct SH9Baker
 {
@@ -1931,6 +1972,8 @@ void MeshBaker::StartBakeThreads()
         threadFunction = BakeThread<DirectionalRGBBaker>;
     else if(currBakeMode == BakeModes::SH4)
         threadFunction = BakeThread<SH4Baker>;
+    else if(currBakeMode == BakeModes::SH4NonColor)
+        threadFunction = BakeThread<SH4NonColorBaker>;
     else if(currBakeMode == BakeModes::SH9)
         threadFunction = BakeThread<SH9Baker>;
     else if(currBakeMode == BakeModes::H4)

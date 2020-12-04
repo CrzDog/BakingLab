@@ -161,7 +161,7 @@ static const char* SampleModesLabels[5] =
     "CMJ",
 };
 
-static const char* BakeModesLabels[12] =
+static const char* BakeModesLabels[13] =
 {
     "Diffuse",
     "Directional",
@@ -175,6 +175,7 @@ static const char* BakeModesLabels[12] =
     "SG6",
     "SG9",
     "SG12",
+    "L1 SH NonColor"
 };
 
 static const char* SolveModesLabels[5] =
@@ -531,7 +532,7 @@ namespace AppSettings
         BakeRussianRouletteProbability.Initialize(tweakBar, "BakeRussianRouletteProbability", "Baking", "Russian Roullette Probability", "Maximum probability for continuing when Russian roulette is used", 0.5000f, 0.0000f, 1.0000f, 0.0100f, ConversionMode::None, 1.0000f);
         Settings.AddSetting(&BakeRussianRouletteProbability);
 
-        BakeMode.Initialize(tweakBar, "BakeMode", "Baking", "Bake Mode", "The current encoding/basis used for baking light map sample points", BakeModes::SG5, 12, BakeModesLabels);
+        BakeMode.Initialize(tweakBar, "BakeMode", "Baking", "Bake Mode", "The current encoding/basis used for baking light map sample points", BakeModes::SG5, 13, BakeModesLabels);
         Settings.AddSetting(&BakeMode);
 
         SolveMode.Initialize(tweakBar, "SolveMode", "Baking", "Solve Mode", "Controls how path tracer radiance samples are converted into a set of per-texel SG lobes", SolveModes::RunningAverageNN, 5, SolveModesLabels);
@@ -977,8 +978,8 @@ namespace AppSettings
         SGDiffuseMode.SetEditable(useSGSettings);
         SolveMode.SetEditable(useSGSettings);
 
-        SH4DiffuseMode.SetEditable(BakeMode == BakeModes::SH4);
-        SHSpecularMode.SetEditable(BakeMode == BakeModes::SH4 || BakeMode == BakeModes::SH9);
+        SH4DiffuseMode.SetEditable(BakeMode == BakeModes::SH4 || BakeMode == BakeModes::SH4NonColor);
+        SHSpecularMode.SetEditable(BakeMode == BakeModes::SH4 || BakeMode == BakeModes::SH9 || BakeMode == BakeModes::SH4NonColor);
 
         if(AppSettings::HasSunDirChanged())
         {

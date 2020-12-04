@@ -241,6 +241,7 @@ enum class BakeModes
     SG6 = 9,
     SG9 = 10,
     SG12 = 11,
+    SH4NonColor = 12,
 
     NumValues
 };
@@ -599,7 +600,7 @@ namespace AppSettings
     inline uint64 BasisCount(uint64 bakeMode)
     {
         Assert_(bakeMode < uint64(BakeModes::NumValues));
-        static const uint64 BasisCounts[] = { 1, 2, 4, 3, 4, 9, 4, 6, 5, 6, 9, 12 };
+        static const uint64 BasisCounts[] = { 1, 2, 4, 3, 4, 9, 4, 6, 5, 6, 9, 12, 2 };
         StaticAssert_(ArraySize_(BasisCounts) == uint64(BakeModes::NumValues));
         Assert_(BasisCounts[bakeMode] <= MaxBasisCount);
         return BasisCounts[bakeMode];
@@ -618,7 +619,7 @@ namespace AppSettings
     inline uint64 SGCount(BakeModes bakeMode)
     {
         Assert_(uint64(bakeMode) < uint64(BakeModes::NumValues));
-        if(uint64(bakeMode) >= uint64(BakeModes::SG5))
+        if(uint64(bakeMode) >= uint64(BakeModes::SG5) && uint64(bakeMode) < uint64(BakeModes::SH4NonColor))
             return BasisCount(bakeMode);
         else
             return 0;
@@ -631,7 +632,7 @@ namespace AppSettings
 
     inline bool SupportsProgressiveIntegration(BakeModes bakeMode, SolveModes solveMode)
     {
-        if((bakeMode == BakeModes::Directional) || (bakeMode == BakeModes::DirectionalRGB) || (SGCount(bakeMode) > 0 && (solveMode == SolveModes::SVD || solveMode == SolveModes::NNLS)))
+        if((bakeMode == BakeModes::SH4NonColor) || (bakeMode == BakeModes::Directional) || (bakeMode == BakeModes::DirectionalRGB) || (SGCount(bakeMode) > 0 && (solveMode == SolveModes::SVD || solveMode == SolveModes::NNLS)))
             return false;
         else
             return true;

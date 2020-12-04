@@ -174,6 +174,17 @@ float4 PS(in PSInput input) : SV_Target0
 
         output = EvalSH4(normalSHSG, shRadiance);
     }
+    else if(BakeMode == BakeModes_SH4NonColor)
+    {
+        SH4 shRadiance;
+        float4 sh4coefs = BakedLightingMap.SampleLevel(LinearSampler, float3(uv, 0), 0.0f).xyzw;
+        shRadiance.c[0] = sh4coefs.x;
+        shRadiance.c[1] = sh4coefs.y;
+        shRadiance.c[2] = sh4coefs.z;
+        shRadiance.c[3] = sh4coefs.w;
+        float3 lightMapColor = BakedLightingMap.SampleLevel(LinearSampler, float3(uv, 1), 0.0f).xyz;
+        output = EvalSH4(normalSHSG, shRadiance) * lightMapColor;
+    }
     else if(BakeMode == BakeModes_SH9)
     {
         SH9Color shRadiance;

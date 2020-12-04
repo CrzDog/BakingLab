@@ -192,6 +192,7 @@ static const int BakeModes_SG5 = 8;
 static const int BakeModes_SG6 = 9;
 static const int BakeModes_SG9 = 10;
 static const int BakeModes_SG12 = 11;
+static const int BakeModes_SH4NonColor = 12;
 
 static const int SolveModes_Projection = 0;
 static const int SolveModes_SVD = 1;

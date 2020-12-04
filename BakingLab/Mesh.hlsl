@@ -367,6 +367,40 @@ float3 ConvolutionSHSpecular(in float3 view, in float3 normal, in float3 specula
     return SHDotProduct(shBrdf, shRadiance);
 }
 
+// float3 ConvolutionSHSpecular(in float3 view, in float3 normal, in float3 specularAlbedo,
+//                              in float sqrtRoughness, in SH9 shRadiance, in float3 lightMapColor)
+// {
+//     // Make a local coordinate frame in tangent space or world space, with the x-axis
+//     // aligned with the view direction and the z-axis aligned with the normal
+//     float3 zBasis = normal;
+//     float3 yBasis = normalize(cross(zBasis, view));
+//     float3 xBasis = normalize(cross(yBasis, zBasis));
+//     float3x3 localFrame = float3x3(xBasis, yBasis, zBasis);
+//     float viewAngle = saturate(dot(normal, view));
+
+//     // Look up coefficients from the SH lookup texture to make the SH BRDF
+//     SH9Color shBrdf = (SH9Color)0.0f;
+
+//     [unroll]
+//     for(uint i = 0; i < 3; ++i)
+//     {
+//         float4 t0 = SHSpecularLookupA.SampleLevel(LinearSampler, float3(viewAngle, sqrtRoughness, specularAlbedo[i]), 0.0f);
+//         float2 t1 = SHSpecularLookupB.SampleLevel(LinearSampler, float3(viewAngle, sqrtRoughness, specularAlbedo[i]), 0.0f);
+//         shBrdf.c[0][i] = t0.x;
+//         shBrdf.c[2][i] = t0.y;
+//         shBrdf.c[3][i] = t0.z;
+//         shBrdf.c[6][i] = t0.w;
+//         shBrdf.c[7][i] = t1.x;
+//         shBrdf.c[8][i] = t1.y;
+//     }
+
+//     // Transform the SH BRDF to tangent space/world space
+//     shBrdf = RotateSH9(shBrdf, localFrame);
+
+//     // Convolve the BRDF slice with the environment radiance
+//     return SHDotProduct(shBrdf, shRadiance);
+// }
+
 // ------------------------------------------------------------------------------------------------
 // Computes approximated specular from radiance encoded as a set of SH coefficients by
 // approximating a directional light in the "dominant" direction.
@@ -384,6 +418,25 @@ float3 FrostbiteSHSpecular(in float3 view, in float3 normal, in float3 specularA
     float3 specDir = avgL1 / avgL1len;
 
     float3 specLightColor = EvalSH4(specDir, shRadiance) * Pi;
+
+    sqrtRoughness = saturate(sqrtRoughness * 1.0f / sqrt(avgL1len));
+    float roughness = sqrtRoughness * sqrtRoughness;
+
+    float3 irradiance;
+    return CalcLighting(normal, specDir, specLightColor, 0.0f, specularAlbedo, roughness, view, irradiance);
+}
+
+float3 FrostbiteSHSpecular(in float3 view, in float3 normal, in float3 specularAlbedo,
+                           in float sqrtRoughness, in SH4 shRadiance, in float3 lightMapColor)
+{
+    float3 avgL1 = float3(-shRadiance.c[3] / shRadiance.c[0],
+                          -shRadiance.c[1] / shRadiance.c[0],
+                           shRadiance.c[2] / shRadiance.c[0]);
+    avgL1 *= 0.5f;
+    float avgL1len = length(avgL1);
+    float3 specDir = avgL1 / avgL1len;
+
+    float3 specLightColor = EvalSH4(specDir, shRadiance) * Pi * lightMapColor;
 
     sqrtRoughness = saturate(sqrtRoughness * 1.0f / sqrt(avgL1len));
     float roughness = sqrtRoughness * sqrtRoughness;
@@ -411,6 +464,30 @@ float3 PunctualSHSpecular(in float3 view, in float3 normal, in float3x3 tangentF
     {
         const float3 lightDir = mul(lightDirs[i], tangentFrame);
         const float3 lightColor = EvalSH9(lightDir, shRadiance) * Pi;
+
+        float3 irradiance;
+        result += CalcLighting(normal, lightDir, lightColor, 0.0f, specularAlbedo,
+                               sqrtRoughness * sqrtRoughness, view, irradiance);
+    }
+
+    return result / 3.0f;
+}
+
+float3 PunctualSHSpecular(in float3 view, in float3 normal, in float3x3 tangentFrame,
+                          in float3 specularAlbedo, in float sqrtRoughness, in SH9 shRadiance, in float3 lightMapColor)
+{
+    const float3 lightDirs[] =
+    {
+        float3(-1.0f / sqrt(6.0f), -1.0f / sqrt(2.0f), 1.0f / sqrt(3.0f)),
+        float3(-1.0f / sqrt(6.0f), 1.0f / sqrt(2.0f), 1.0f / sqrt(3.0f)),
+        float3(sqrt(2.0f / 3.0f), 0.0f, 1.0f / sqrt(3.0f)),
+    };
+
+    float3 result = 0.0f;
+    for(uint i = 0; i < 3; ++i)
+    {
+        const float3 lightDir = mul(lightDirs[i], tangentFrame);
+        const float3 lightColor = EvalSH9(lightDir, shRadiance) * Pi * lightMapColor;
 
         float3 irradiance;
         result += CalcLighting(normal, lightDir, lightColor, 0.0f, specularAlbedo,
@@ -518,6 +595,52 @@ float3 PrefilteredSHSpecular(in float3 view, in float3 normal, in float3x3 tange
 
         specLightColor = sum / weightSum;
     }*/
+
+    return envBRDF * specLightColor;
+}
+
+float3 PrefilteredSHSpecular(in float3 view, in float3 normal, in float3x3 tangentFrame,
+                             in float3 specularAlbedo, in float sqrtRoughness, in SH9 shRadiance, in float3 lightMapColor)
+{
+    const float3 reflectDir = reflect(-view, normal);
+
+    const float roughness = sqrtRoughness * sqrtRoughness;
+
+    // Pre-filter the SH radiance with the GGX NDF using a fitted approximation
+    const float l1Scale = 1.66711256633276f / (1.65715038133932f + roughness);
+    const float l2Scale = 1.56127990596116f / (0.96989757593282f + roughness) - 0.599972342361123f;
+
+    SH9 filteredSHRadiance = shRadiance;
+    filteredSHRadiance.c[1] *= l1Scale;
+    filteredSHRadiance.c[2] *= l1Scale;
+    filteredSHRadiance.c[3] *= l1Scale;
+    filteredSHRadiance.c[4] *= l2Scale;
+    filteredSHRadiance.c[5] *= l2Scale;
+    filteredSHRadiance.c[6] *= l2Scale;
+    filteredSHRadiance.c[7] *= l2Scale;
+    filteredSHRadiance.c[8] *= l2Scale;
+
+    float3 lookupDir = normalize(lerp(reflectDir, normal, saturate(roughness - 0.25f)));
+
+    float3 specLightColor = max(EvalSH9(lookupDir, filteredSHRadiance), 0.0f) * lightMapColor;
+
+    const float nDotV = saturate(dot(normal, view));
+    const float2 AB = EnvSpecularLookup.SampleLevel(LinearSampler, float2(nDotV, sqrtRoughness), 0.0f);
+    float3 envBRDF = specularAlbedo * AB.x + AB.y;
+
+    // Testing a fitted polynomial approximation of the environment BRDF
+    if(0)
+    {
+        const float nDotV2 = nDotV * nDotV;
+        const float sqrtRoughness3 = roughness * sqrtRoughness;
+        const float delta = 0.991086418474895f + 0.412367709802119f * sqrtRoughness * nDotV2 - 0.363848256078895f * roughness - 0.758634385642633f* nDotV * roughness;
+        float B = 0.0306613448029984f * sqrtRoughness + 0.0238299731830387f / (0.0272458171384516f + sqrtRoughness3 + nDotV2) - 0.0454747751719356f;
+
+        B = saturate(B);
+
+        const float A = saturate(delta - B);
+        envBRDF = specularAlbedo * A + B;
+    }
 
     return envBRDF * specLightColor;
 }
@@ -700,6 +823,32 @@ PSOutput PS(in PSInput input)
                 indirectSpecular = PrefilteredSHSpecular(viewSHSG, normalSHSG, tangentFrameSHSG, specularAlbedo, sqrtRoughness, ConvertToSH9(shRadiance));
             else
                 indirectSpecular = ConvolutionSHSpecular(viewSHSG, normalSHSG, specularAlbedo, sqrtRoughness, ConvertToSH9(shRadiance));
+        }
+        else if(BakeMode == BakeModes_SH4NonColor)
+        {
+            SH4 shRadiance;
+            float4 sh4coefs = BakedLightingMap.SampleLevel(LinearSampler, float3(input.LightMapUV, 0), 0.0f).xyzw;
+            shRadiance.c[0] = sh4coefs.x;
+            shRadiance.c[1] = sh4coefs.y;
+            shRadiance.c[2] = sh4coefs.z;
+            shRadiance.c[3] = sh4coefs.w;
+            float3 lightMapColor = BakedLightingMap.SampleLevel(LinearSampler, float3(input.LightMapUV, 1), 0.0f).xyz;
+            if(SH4DiffuseMode == SH4DiffuseModes_Geomerics)
+                indirectIrradiance = EvalSH4IrradianceGeomerics(normalSHSG, shRadiance) * lightMapColor;
+            else
+                indirectIrradiance = EvalSH4Irradiance(normalSHSG, shRadiance) * lightMapColor;
+
+            indirectSpecular = FrostbiteSHSpecular(viewSHSG, normalSHSG, specularAlbedo, sqrtRoughness, shRadiance, lightMapColor);
+
+            if(SHSpecularMode == SHSpecularModes_DominantDirection)
+                indirectSpecular = FrostbiteSHSpecular(viewSHSG, normalSHSG, specularAlbedo, sqrtRoughness, shRadiance, lightMapColor);
+            else if(SHSpecularMode == SHSpecularModes_Punctual)
+                indirectSpecular = PunctualSHSpecular(viewSHSG, normalSHSG, tangentFrameSHSG, specularAlbedo, sqrtRoughness, ConvertToSH9(shRadiance), lightMapColor);
+            else if(SHSpecularMode == SHSpecularModes_Prefiltered)
+                indirectSpecular = PrefilteredSHSpecular(viewSHSG, normalSHSG, tangentFrameSHSG, specularAlbedo, sqrtRoughness, ConvertToSH9(shRadiance), lightMapColor);
+            else
+                indirectSpecular = 0.0f;
+
         }
         else if(BakeMode == BakeModes_SH9)
         {
