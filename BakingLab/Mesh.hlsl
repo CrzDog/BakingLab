@@ -781,6 +781,25 @@ PSOutput PS(in PSInput input)
 			float halfLambert = dot(tau, float4(lightmapDirection.xyz, 1.0f));
 
 			indirectIrradiance = lightMapColor * halfLambert / rebalancingCoefficient;
+            float3 reflectVector = reflect(-viewWS, normalWS);
+            // Squish component in normal direction.
+            // It is possible for the direction to below the horizon. This
+            // correction ensures we do not see any undesirable backlighting.
+            //lightmapDirection.xyz += normalWS * max(0.0f, -dot(lightmapDirection.xyz, normalWS));
+            float fac = length(lightmapDirection.xyz);
+            float fac2 = fac * fac;
+            float RoL = max(dot(reflectVector, normalize(lightmapDirection.xyz)), 0.0f);
+            float a2 = roughness * roughness;
+            float rcp_a2 = rcp(a2);
+            float c = 0.72134752 * rcp_a2 + 0.39674113;
+            float p = rcp_a2 * exp2((c * RoL - c) * fac2);
+            indirectSpecular = specularAlbedo * min(p, rcp_a2) * fac2 * lightMapColor / Pi / Pi;
+
+            //float3 specLightColor = lightMapColor;
+            //float3 specDir = lightmapDirection.xyz;
+
+            //float3 irradiance;
+            //indirectSpecular = CalcLighting(normalWS, specDir, specLightColor, 0.0f, specularAlbedo, roughness, viewWS, irradiance);
 		}
         else if(BakeMode == BakeModes_DirectionalRGB)
         {
@@ -838,7 +857,7 @@ PSOutput PS(in PSInput input)
             else
                 indirectIrradiance = EvalSH4Irradiance(normalSHSG, shRadiance) * lightMapColor;
 
-            indirectSpecular = FrostbiteSHSpecular(viewSHSG, normalSHSG, specularAlbedo, sqrtRoughness, shRadiance, lightMapColor);
+            // indirectSpecular = FrostbiteSHSpecular(viewSHSG, normalSHSG, specularAlbedo, sqrtRoughness, shRadiance, lightMapColor);
 
             if(SHSpecularMode == SHSpecularModes_DominantDirection)
                 indirectSpecular = FrostbiteSHSpecular(viewSHSG, normalSHSG, specularAlbedo, sqrtRoughness, shRadiance, lightMapColor);
